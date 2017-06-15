@@ -11,6 +11,7 @@
 #include <vector>
 #include <iostream>
 #include <stdexcept>
+#include <cstdint>
 
 #define JSBIND11_PLUGIN(NAME)						\
   jsbind11::internal::module_init __ ## NAME ## _init_delegate();	\
@@ -46,11 +47,88 @@ namespace jsbind11 {
 
   using namespace std;
 
-  //  template<typename A, typename B> struct type {}
+  namespace internal {
+    namespace napi {
+      inline void check_status(napi_status status) {
+	if (status != napi_ok) {
+	  throw runtime_error("NAPI status isn't ok...");
+	}
+      }
+    }  // namespace napi
+  }  // namespace internal
+  
+  template<typename S, typename T>
+  struct type {
+    static inline void cast(napi_env env, const S& s, T& t) { t = (S) s; }
+  };
 
+  /* TODO: figure out issues related to napi_create_boolean
+
+  template<>
+  struct type<napi_value, bool> {
+    static void cast(napi_env env, const napi_value& source, bool& target) {
+      internal::napi::
+        check_status(napi_get_value_bool(env, source, &target));
+    }
+  };
+
+  template<>
+  struct type<bool, napi_value> {
+    static void cast(napi_env env, const bool& source, napi_value& target) {
+      internal::napi::
+        check_status(napi_create_boolean(env, source, &target));
+    }
+  };
+  
+  */
+
+  template<>
+  struct type<napi_value, double> {
+    static void cast(napi_env env, const napi_value& source, double& target) {
+      internal::napi::
+	check_status(napi_get_value_double(env, source, &target));
+    }
+  };
+
+  template<>
+  struct type<double, napi_value> {
+    static void cast(napi_env env, const double& source, napi_value& target) {
+      internal::napi::
+	check_status(napi_create_number(env, source, &target));
+    }
+  };
+  
   // TODO: add partial specializations of type to convert between JS and C++ types
 
   namespace internal {
+    namespace magic {
+      template<int ...>
+      struct seq {};
+      template<int N, int ...S>
+      struct gens : gens<N-1, N-1, S...> {};
+      template<int ...S>
+      struct gens<0, S...>{ typedef seq<S...> type; };
+      template <typename T, typename ...Args>
+      class call {
+	std::tuple<Args...> args_;
+	std::function<T(Args...)> func_;
+	//	T (*func_)(Args...);
+      public:
+	explicit call(T (*f)(Args...),
+		      std::tuple<Args...> a) : args_(a), func_(f) {}
+	explicit call(std::function<T(Args...)> f,
+		      std::tuple<Args...> a) : args_(a), func_(f) {}
+	T operator()() const {
+	  return call_with_args(typename gens<sizeof...(Args)>::type());
+	}
+      private:
+	template<int ...S>
+	T call_with_args(seq<S...>) const {
+	  return func_(std::get<S>(args_)...);
+	}
+      };
+    }  // namespace magic
+    
     namespace napi {
       typedef function<napi_value(napi_env,napi_callback_info)> callback;
       
@@ -62,12 +140,6 @@ namespace jsbind11 {
       private:
 	virtual napi_value get_napi_value_(napi_env env) = 0;	  
       };
-      
-      inline void check_status(napi_status status) {
-	if (status != napi_ok) {
-	  throw runtime_error("NAPI status isn't ok...");
-	}
-      }
     }  // namespace napi
 
     class function : public napi::value {  
@@ -185,6 +257,87 @@ namespace jsbind11 {
 	}
       }
     };
+
+    namespace magic {
+      template<typename ... ArgTypes>
+      struct call_args_helper {};
+
+      template<typename FirstArgType, typename ... ArgTypes>
+      struct call_args_helper<FirstArgType, ArgTypes...> {
+	template <typename T>
+	static void parse_args(napi_env env, T& args, napi_value* argv) {
+	  // Determine which argument to convert
+	  const size_t N = std::tuple_size<T>::value -
+	    std::tuple_size<std::tuple<FirstArgType, ArgTypes...>>::value;
+	  // Cast Nth argument from NAPI value to FirstArgType
+	  type<napi_value, FirstArgType>::cast(env, argv[N], std::get<N>(args));
+	  // Convert the rest of arguments
+	  call_args_helper<ArgTypes...>::parse_args(env, args, argv);
+	}
+      };
+
+      template<>
+      struct call_args_helper<> {
+	template <typename T>
+	static void parse_args(napi_env env, T& args, napi_value* argv) {}
+      };
+
+      template <typename ... ArgTypes>
+      class call_args {
+	tuple<ArgTypes...> args_;
+      public:
+	call_args(napi_env env, napi_callback_info info) {
+	  // NAPI call status
+	  napi_status status;
+
+	  // Note: it's unlikely that anyone would be using function call
+	  //       signatures with 256+ call parameters, so this should do...
+	  const size_t max_argc = 256;
+
+	  // Make sure function type isn't insane 
+	  static_assert(max_argc >= tuple_size<tuple<ArgTypes...>>::value,
+			"Maximum number of jsbind11 function arguments is 256");
+
+	  // Construct call args
+	  size_t argc = max_argc;
+	  napi_value argv[max_argc];
+	  napi_value this_arg;
+	  void* data;
+
+	  // Get callback info via NAPI
+	  status = napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+
+	  // Make sure all is well!
+	  napi::check_status(status);
+
+	  if (argc != tuple_size<tuple<ArgTypes...>>::value) {
+	    // TODO: provide more meaningfull error message
+	    throw runtime_error("Received wrong number of function arguments");
+	  }
+
+	  call_args_helper<ArgTypes...>::parse_args(env, args_, argv);
+	}
+	
+	tuple<ArgTypes...> operator()() {
+	  return args_;
+	}
+      };
+
+      template <typename FunctionType>
+      struct function_traits :
+	public function_traits<decltype(&FunctionType::operator())> {};
+      template <typename ClassType, typename ReturnType, typename... Args>
+      struct function_traits<ReturnType(ClassType::*)(Args...) const> {
+	enum { arity = sizeof...(Args) };
+	typedef std::function<ReturnType(Args...)> function_type;
+	typedef ReturnType result_type;
+	template <size_t I>
+	struct arg {
+	  typedef typename std::tuple_element<I, std::tuple<Args...>>::type type;
+	};
+      };
+      
+    }  // namespace magic
   }  // namespace internal
 
   class module {
@@ -193,16 +346,40 @@ namespace jsbind11 {
     module(const string& name) :
       desc_(make_shared<internal::module_desc>(name)) {}
 
-    template <typename FunType>
-    void function(const string& name, const FunType fun) {
-      auto cb = [=](napi_env env, napi_callback_info info) {
-	napi_value v = nullptr;
-	napi_create_number(env, 420.0, &v);
-	return v;
-	// TODO: get parameters using napi_callback_info,
-	//       convert them to C++ types, and dispatch call to fun
-      };
-      desc_->add_function(name, cb);
+    template <typename RetType, typename ... ArgTypes>
+    void function(const string& f_name, RetType (*f_ptr)(ArgTypes...)) {
+      // Create function wrapper object
+      std::function<RetType(ArgTypes...)> f(f_ptr);
+      // Delegate to other function method
+      function(f_name, f);
+    }
+
+    template <typename LambdaType>
+    void function(const string& f_name, LambdaType f_lambda) {
+      using namespace internal;
+      // Infer function type from lambda object
+      typedef magic::function_traits<decltype(f_lambda)> f_traits;
+      // Create function wrapper
+      typename f_traits::function_type f = f_lambda;
+      // Delegate to other function method
+      function(f_name, f);
+    }
+    
+    template <typename RetType, typename ... ArgTypes>
+    void function(const string& f_name, std::function<RetType(ArgTypes...)> f) {
+      desc_->add_function(f_name, [=](napi_env env, napi_callback_info info) {
+	  using namespace internal;
+	  // Parse function call aguments from napi callback info
+	  auto f_args = magic::call_args<ArgTypes...>(env, info)();
+	  // Forward call arguments to native C++ function
+	  auto f_result = magic::call<RetType, ArgTypes...>(f, f_args)();
+	  // Construct NAPI value from return value of native C++ function
+	  napi_value f_result_napi_value = nullptr; // NAPI equivalent of f_result
+	  // Cast C++ value to NAPI value
+	  type<RetType, napi_value>::cast(env, f_result, f_result_napi_value);
+	  // Return NAPI value
+	  return f_result_napi_value;
+	});
     }
     
     internal::module_init init() const {
