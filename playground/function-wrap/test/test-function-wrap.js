@@ -17,4 +17,7 @@ function testMul()
     assert.strictEqual(funcWrap.mul(a, b), a * b);
 }
 
+testAdd();
+testMul();
+
 console.log("Tests passed- everything looks OK!");

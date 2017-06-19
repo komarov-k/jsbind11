@@ -4,22 +4,23 @@
 #include <iostream>
 #include <string>
 
-class Hello {
-  double mValue;
+class Adder {
+  double mFirst;
+  double mSecond;
 public:
-  explicit Hello(double value) : mValue(value) {}
-
-  void sayHello() const {
-    std::cout << "Hello " << mValue << std::endl;
+  Adder(double first, double second) :
+    mFirst(first),
+    mSecond(second) {}
+  double getValue() const {
+    return mFirst * mSecond;
   }
 };
 
 JSBIND11_MODULE(addon, m) {
-  m.class_<Hello>("Hello")
-    .constructor<double>()
-    .method("sayHello", &Hello::sayHello)
-    .method("sayHelloTwice", [](const Hello& hello) {
-	hello.sayHello();
-	hello.sayHello();
+  m.class_<Adder>("Adder")
+    .constructor<double, double>()
+    .method("getValue", &Adder::getValue)
+    .method("getDoubleValue", [](const Adder& adder) {
+	return adder.getValue() * 2;
       });
 };
