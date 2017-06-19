@@ -13,6 +13,19 @@
 #include <stdexcept>
 #include <cstdint>
 
+#define JSBIND11_DEBUG
+
+#ifndef JSBIND11_DEBUG
+#define JSBIND11_DEBUG false
+#define JSBIND11_CHECK_STATUS(S) \
+  jsbind11::internal::napi::check_status(S)
+#else
+#undef JSBIND11_DEBUG
+#define JSBIND11_DEBUG true
+#define JSBIND11_CHECK_STATUS(S) \
+  jsbind11::internal::napi::check_status(S, __FILE__, __LINE__)
+#endif // JSBIND11_DEBUG
+
 #define JSBIND11_PLUGIN(NAME)						\
   jsbind11::internal::module_init __ ## NAME ## _init_delegate();	\
   void __ ## NAME ## _init(napi_env env,				\
@@ -42,7 +55,6 @@
   NAPI_MODULE(NAME, __ ## NAME ## _init);				\
   void __ ## NAME ## _init_function(jsbind11::module & M)
 
-
 namespace jsbind11 {
 
   using namespace std;
@@ -50,6 +62,54 @@ namespace jsbind11 {
   namespace internal {
     namespace napi {
       inline void check_status(napi_status status) {
+	if (status != napi_ok) {
+	  throw runtime_error("NAPI status isn't ok...");
+	}
+      }
+
+      inline void check_status(napi_status status, const char* file, size_t line) {
+	switch (status) {
+	  case napi_ok:
+	    cout << "NAPI_STATUS: napi_ok FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_invalid_arg:
+	    cout << "NAPI_STATUS: napi_invalid_arg FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_object_expected:
+	    cout << "NAPI_STATUS: napi_object_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_string_expected:
+	    cout << "NAPI_STATUS: napi_string_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_name_expected:
+	    cout << "NAPI_STATUS: napi_name_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_function_expected:
+	    cout << "NAPI_STATUS: napi_function_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_number_expected:
+	    cout << "NAPI_STATUS: napi_number_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_boolean_expected:
+	    cout << "NAPI_STATUS: napi_boolean_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_array_expected:
+	    cout << "NAPI_STATUS: napi_array_expected FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_generic_failure:
+	    cout << "NAPI_STATUS: napi_generic_failure FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_pending_exception:
+	    cout << "NAPI_STATUS: napi_pending_exception FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_cancelled:
+	    cout << "NAPI_STATUS: napi_cancelled FILE: " << file << " LINE: " << line << endl;
+	    break;
+	  case napi_status_last:
+	    cout << "NAPI_STATUS: napi_status_last FILE: " << file << " LINE: " << line << endl;
+	    break;
+	}
+
 	if (status != napi_ok) {
 	  throw runtime_error("NAPI status isn't ok...");
 	}
@@ -141,16 +201,18 @@ namespace jsbind11 {
   template<>
   struct type<napi_value, double> {
     static void cast(napi_env env, const napi_value& source, double& target) {
-      internal::napi::
-	check_status(napi_get_value_double(env, source, &target));
+      auto status = napi_get_value_double(env, source, &target);
+      
+      JSBIND11_CHECK_STATUS(status);
     }
   };
 
   template<>
   struct type<double, napi_value> {
     static void cast(napi_env env, const double& source, napi_value& target) {
-      internal::napi::
-	check_status(napi_create_number(env, source, &target));
+      auto status = napi_create_number(env, source, &target);
+      
+      JSBIND11_CHECK_STATUS(status);
     }
   };
   
@@ -174,9 +236,9 @@ namespace jsbind11 {
 	std::function<T(Args...)> func_;
       public:
 	explicit call(T (*f)(Args...),
-		      std::tuple<Args...> a) : args_(a), func_(f) {}
+		      const std::tuple<Args...>& a) : args_(a), func_(f) {}
 	explicit call(std::function<T(Args...)> f,
-		      std::tuple<Args...> a) : args_(a), func_(f) {}
+		      const std::tuple<Args...>& a) : args_(a), func_(f) {}
 	T operator()() const {
 	  return call_with_args(typename gens<sizeof...(Args)>::type());
 	}
@@ -192,9 +254,9 @@ namespace jsbind11 {
       typedef function<napi_value(napi_env,napi_callback_info)> callback;
 
       class callback_table {
-	mutex mutex_;
+	static mutex mutex_;
 	vector<callback> napi_callback_list_;
-      public:
+      public:	
 	size_t add_callback(callback cb) {
 	  lock_guard<mutex> lock(mutex_);
 
@@ -227,7 +289,7 @@ namespace jsbind11 {
 	  // Get callback data
 	  status = napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
 	  // Make sure all is well!
-	  check_status(status);
+	  JSBIND11_CHECK_STATUS(status); 
 	
 	  // Data must be valid.
 	  if (data == nullptr) {
@@ -239,8 +301,10 @@ namespace jsbind11 {
 	}
       };
 
+      mutex callback_table::mutex_;
+      
       class property_descriptor_table {
-	mutex mutex_;
+	static mutex mutex_;
 	vector<callback> napi_callback_list_;
 	vector<napi_property_descriptor> napi_property_descriptor_list_;
 
@@ -265,7 +329,7 @@ namespace jsbind11 {
 	  // Get callback data
 	  status = napi_get_cb_info(env, info, &argc, argv, &this_arg, (void**) &cs);
 	  // Make sure all is well!
-	  check_status(status);
+	  JSBIND11_CHECK_STATUS(status); 
 	
 	  // Callback selector must be valid.
 	  if (cs == nullptr) {
@@ -424,7 +488,7 @@ namespace jsbind11 {
 	  napi_property_descriptor pd = {
 	    name.c_str(), // utf8name
 	    nullptr, // name
-	    &method_callback_dispatch, // method
+	    method_callback_dispatch, // method
 	    nullptr, // getter
 	    nullptr, // setter
 	    nullptr, // value
@@ -445,6 +509,9 @@ namespace jsbind11 {
 	  return napi_property_descriptor_list_;
 	}
       };
+
+      mutex property_descriptor_table::mutex_;
+      
       class value {
       public:
 	napi_value get_napi_value(napi_env env) {
@@ -487,60 +554,57 @@ namespace jsbind11 {
 	
 	tuple<ArgTypes...> args_;
 	napi_value argv_[max_argc + 1];
-	void* data_;
-	void* this_;
       public:
-	call_args(napi_env env, napi_callback_info info) : data_(nullptr), this_(nullptr) {
+	call_args(napi_env env,
+		  napi_callback_info info) {
+	  
 	  // NAPI call status
 	  napi_status status;
-
+	  
 	  // Make sure function type isn't insane 
 	  static_assert(max_argc >= tuple_size<tuple<ArgTypes...>>::value,
 			"Maximum number of jsbind11 function arguments is 256");
 
 	  // Construct call args
 	  size_t argc = max_argc;
-
+	  
 	  // Get callback info via NAPI
-	  status = napi_get_cb_info(env,
-				    info,
-				    &argc,
-				    &argv_[0],
-				    &argv_[max_argc],
-				    &data_);
-
+	  status = napi_get_cb_info(env, info, &argc, &argv_[0], &argv_[max_argc], nullptr);
+	  
 	  // Make sure all is well!
-	  napi::check_status(status);
-
+	  JSBIND11_CHECK_STATUS(status); 
+	  
 	  if (argc != tuple_size<tuple<ArgTypes...>>::value) {
+	    cout << "Wrong callback: expected " << tuple_size<tuple<ArgTypes...>>::value << ", got " << argc << " args...\n" << std::flush;
 	    // TODO: provide more meaningfull error message
 	    throw runtime_error("Received wrong number of function arguments");
 	  }
-
-	  // Parse this args...
-	  status = napi_unwrap(env, argv_[max_argc], &this_);
 	  
-	  // Make sure all is well!
-	  napi::check_status(status);
-
+	  // Recursively parse positional arguments...
 	  call_args_helper<ArgTypes...>::parse_args(env, args_, argv_);
 	}
 	
-	tuple<ArgTypes...>& operator()() {
+	const tuple<ArgTypes...>& operator()() {
 	  return args_;
 	}
 
-	tuple<ArgTypes...>& get_args() const {
+	const tuple<ArgTypes...>& get_args() const {
 	  return args_;
 	}
 
-	template <typename ClassType>
-	ClassType& get_this_arg() const {
-	  if (this_ != nullptr) {
-	    return *(ClassType*)(this_);
-	  } else {
-	    throw runtime_error("Couln't parse this arg...");
-	  }
+	void* get_this_arg(napi_env env) const {
+	  // Native 'this' argument
+	  void* this_ = nullptr;;
+	  // Unwrap 'this' argument from JS object...
+	  auto status = napi_unwrap(env, argv_[max_argc], &this_);
+	  // Make sure all is well!
+	  JSBIND11_CHECK_STATUS(status);
+	  // Done!
+	  return this_;
+	}
+
+	const napi_value& get_this_arg_napi_value() const {
+	  return argv_[max_argc];
 	}
       };
 
@@ -561,15 +625,14 @@ namespace jsbind11 {
     }  // namespace magic
 
     class class_ : public napi::value {
-      static napi::callback_table constructor_table_;
       static napi::property_descriptor_table property_descriptor_table_;
-      static vector<vector<size_t>> constructor_id_table_;
-      size_t class_id_;
+      static vector<napi::callback_table> constructor_table_list_;
+      size_t constructor_table_id_;
       string name_;
     public:
       class_(const string& name) : name_(name) {
-	class_id_ = constructor_id_table_.size();
-	constructor_id_table_.push_back({});
+	constructor_table_id_ = constructor_table_list_.size();
+	constructor_table_list_.push_back(napi::callback_table());
       }
 
       const string& get_name() const {
@@ -577,8 +640,7 @@ namespace jsbind11 {
       }
 
       void add_constructor(napi::callback cb) {
-	constructor_id_table_[class_id_]
-	  .push_back(constructor_table_.add_callback(cb));
+	constructor_table_list_.at(constructor_table_id_).add_callback(cb);
       }
       
       void add_method(const string& name, napi::callback cb) {
@@ -594,7 +656,7 @@ namespace jsbind11 {
 	size_t argc = 0;
 	napi_value argv[1] = {0};
 	napi_value this_arg;
-	vector<size_t>* cb_ids = nullptr; // callback IDs
+	napi::callback_table* cb_table = nullptr;
 	
 	// Get callback data
 	status = napi_get_cb_info(env,
@@ -602,25 +664,27 @@ namespace jsbind11 {
 				  &argc,
 				  argv,
 				  &this_arg,
-				  (void**) &cb_ids);
+				  (void**) &cb_table);
 	// Make sure all is well!
-	napi::check_status(status);
-	
-	// Callback selector must be valid.
-	if (cb_ids == nullptr) {
-	  // TODO: raise runtime error
-	}
-	
-	for (auto cb_id : *cb_ids) {
-	  auto cb = constructor_table_.get_callback(cb_id);
+	JSBIND11_CHECK_STATUS(status); 
 
+	// Callback selector must be valid.
+	if (cb_table == nullptr) {
+	  cout << "Invalid callback table";
+	  throw runtime_error("Invalid callback table");
+	}
+
+	for (auto cb : cb_table->get_callback_list()) {	  
 	  try {
+	    cout << "Trying some constructor...\n";
 	    return cb(env, info);
 	  } catch (...) {
 	    continue;
 	  }
 	}
 
+	cout << "About to die\n";
+	
 	throw runtime_error("Couldn't contruct object...");
       }
       
@@ -630,8 +694,8 @@ namespace jsbind11 {
 
 	// Construct call args
 	const char* c_name = name_.c_str();
-	napi_callback c_constructor = &class_::construtor_callback;
-	void* c_data = &class_::constructor_id_table_[class_id_];
+	napi_callback c_constructor = &construtor_callback;
+	void* c_data = &constructor_table_list_[constructor_table_id_];
 	
 	const size_t c_property_descriptor_count = \
 	  property_descriptor_table_.get_property_descriptor_list().size();
@@ -649,62 +713,25 @@ namespace jsbind11 {
 				   &c_napi_value);
 	
 	// Make sure all is well!
-	napi::check_status(status);
+	JSBIND11_CHECK_STATUS(status);
 
 	// Return created NAPI value
 	return c_napi_value;
       }
     };
-      
-    napi::callback_table class_::constructor_table_;
-    napi::property_descriptor_table class_::property_descriptor_table_;
-    vector<vector<size_t>> class_::constructor_id_table_;
 
-    template <typename ClassType>
-    class class_builder {
-      class_& c_;
-    public:
-      class_builder(class_& c) : c_(c) {}
+    napi::property_descriptor_table class_::property_descriptor_table_ = {};
+    vector<napi::callback_table> class_::constructor_table_list_ = {};
 
-      template <typename ... ArgTypes>
-      class_builder& constructor()
-      {
-	// TODO: implement this...
-	return *this;
-      }
-
-      template <typename RetType, typename ... ArgTypes>
-      class_builder& method(const string& m_name, RetType (ClassType::*m_ptr)(ArgTypes...) const) {
-	// Delegate to other method
-	return method<RetType, ArgTypes...>(m_name, m_ptr);
-      }
-
-      template <typename RetType, typename ... ArgTypes>
-      class_builder& method(const string& m_name, RetType (ClassType::*m_ptr)(ArgTypes...)) {
-	// Create function wrapper
-	auto m_function = [=](ClassType& c, ArgTypes ... args) { return c.*m_ptr(args...); };
-	// Delegate to other method
-	return method(m_name, m_function);
-      }
-      
-      template <typename LambdaType>
-      class_builder& method(const string& m_name, LambdaType m_lambda) {
-	// Infer function type from lambda object
-	typedef magic::function_traits<decltype(m_lambda)> f_traits;
-	// Create function wrapper
-	typename f_traits::function_type m_function = m_lambda;
-	// Delegate to other function method
-	return method(m_name, m_function);
-      }
-
-      template <typename RetType, typename ... ArgTypes>
-      class_builder& method(const string& m_name, std::function<RetType(ClassType&, ArgTypes...)> m) {
-	auto m_callback = [=](napi_env env, napi_callback_info info) {
+    template <typename ClassType, typename RetType, typename ... ArgTypes>
+    struct class_builder_helper {
+      static napi::callback wrap_method(std::function<RetType(ClassType&, ArgTypes...)> m) { 
+	auto cb = [=](napi_env env, napi_callback_info info) {
 	  // Parse function call aguments from napi callback info
 	  magic::call_args<ArgTypes...> m_call_args(env, info);
 	  auto m_args = m_call_args.get_args();
-	  auto m_this_arg = m_call_args.template get_this_arg<ClassType>();
-	  auto m_this_and_args = tuple_cat(make_tuple(m_this_arg), m_args);
+	  auto m_this_arg = (ClassType*) m_call_args.get_this_arg(env);
+	  auto m_this_and_args = tuple_cat(make_tuple(*m_this_arg), m_args);
 	  // Forward call arguments to native C++ function
 	  auto m_result = magic::call<RetType, ArgTypes...>(m, m_this_and_args)();
 	  // Construct NAPI value from return value of native C++ function
@@ -714,11 +741,171 @@ namespace jsbind11 {
 	  // Return NAPI value
 	  return m_result_napi_value;
 	};
+	return napi::callback(cb);
+      }
+    };
 
-	c_.add_method(m_name, m_callback);
+    template <typename ClassType, typename RetType>
+    struct class_builder_helper<ClassType, RetType> {
+      static napi::callback wrap_method(std::function<RetType(ClassType&)> m) {
+	auto cb = [=](napi_env env, napi_callback_info info) {
+	  // Parse function call aguments from napi callback info
+	  magic::call_args<> m_call_args(env, info);
+	  // Get unwrapped native 'this' argument
+	  auto m_this_arg = (ClassType*) m_call_args.get_this_arg(env);
+	  // Forward call arguments to native C++ function
+	  auto m_result = m(*m_this_arg);
+	  // Construct NAPI value from return value of native C++ function
+	  napi_value m_result_napi_value = nullptr; // NAPI equivalent of m_result
+	  // Cast C++ value to NAPI value
+	  type<RetType, napi_value>::cast(env, m_result, m_result_napi_value);
+	  // Return NAPI value
+	  return m_result_napi_value;
+	};
+	return napi::callback(cb);	
+      }
+    };
+    
+    template <typename ClassType, typename ... ArgTypes>
+    struct class_builder_helper<ClassType, void, ArgTypes...> {
+      static napi::callback wrap_method(std::function<void(ClassType&, ArgTypes...)> m) {
+	auto cb = [=](napi_env env, napi_callback_info info) {
+	  // Parse function call aguments from napi callback info
+	  magic::call_args<ArgTypes...> m_call_args(env, info);
+	  auto m_args = m_call_args.get_args();
+	  auto m_this_arg = (ClassType*) m_call_args.get_this_arg(env);
+	  auto m_this_and_args = tuple_cat(make_tuple(*m_this_arg), m_args);
+	  // Forward call arguments to native C++ function
+	  magic::call<void, ArgTypes...>(m, m_this_and_args)();
+	  // Construct NAPI value from return value of native C++ function
+	  napi_value m_result_napi_value = nullptr; // NAPI equivalent of m_result
+	  // Cast C++ value to NAPI value
+	  auto status = napi_get_undefined(env, &m_result_napi_value);
+	  // Make sure all is well!
+	  JSBIND11_CHECK_STATUS(status); 
+	  // Return NAPI value
+	  return m_result_napi_value;
+	};
+	return napi::callback(cb);	
+      }
+    };
+
+    template <typename ClassType>
+    struct class_builder_helper<ClassType, void> {
+      
+      static napi::callback wrap_method(std::function<void(ClassType&)> m) {
+	auto cb = [=](napi_env env, napi_callback_info info) {
+	  // Parse function call aguments from napi callback info
+	  magic::call_args<> m_call_args(env, info);
+	  auto m_this_arg = (ClassType*) m_call_args.get_this_arg(env);
+	  // Forward call arguments to native C++ function
+	  m(*m_this_arg);
+	  // Construct NAPI value from return value of native C++ function
+	  napi_value m_result_napi_value = nullptr; // NAPI equivalent of m_result
+	  // Cast C++ value to NAPI value
+	  auto status = napi_get_undefined(env, &m_result_napi_value);
+	  // Make sure all is well!
+	  JSBIND11_CHECK_STATUS(status);
+	  // Return NAPI value
+	  return m_result_napi_value;
+	};
+	return napi::callback(cb);	
+      }
+    };
+    
+    
+    template <typename ClassType>
+    class class_builder {
+      class_& c_;
+
+      static napi_value finilize_callback_stub(napi_env env, napi_callback_info info) {
+	napi_value v = nullptr;
+	return v;
+      }
+    public:
+      class_builder(class_& c) : c_(c) {}
+
+
+      template <typename ... ArgTypes>
+      class_builder& constructor() {
+	std::function<ClassType*(ArgTypes...)> create = [](ArgTypes ... args) {
+	  return new ClassType(args...);
+	};
 	
+	napi::callback cb = [=](napi_env env, napi_callback_info info) {
+	  cout << "Inside constructor\n";
+	  // Parse function call aguments from napi callback info
+	  magic::call_args<ArgTypes...> c_call_args(env, info);
+	  const tuple<ArgTypes...>& c_args = c_call_args.get_args();
+	  napi_value c_this_arg_napi_value = c_call_args.get_this_arg_napi_value();
+	  ClassType* c_this_arg = magic::call<ClassType*, ArgTypes...>(create, c_args)();
+	  napi_finalize c_finilize_callback = &class_builder<ClassType>::desctructor;
+	  void* c_finilize_hint = nullptr;
+	  
+	  auto status = napi_wrap(env,
+				  c_this_arg_napi_value,
+				  c_this_arg,
+				  c_finilize_callback,
+				  c_finilize_hint,
+				  nullptr);
+
+	  // Make sure all is well!
+	  JSBIND11_CHECK_STATUS(status);
+
+	  // Return NAPI value
+	  return c_this_arg_napi_value;
+	};
+
+	c_.add_constructor(cb);
+
 	return *this;
       }
+
+      template <typename RetType, typename ... ArgTypes>
+      class_builder& method(const string& m_name, RetType (ClassType::*m_ptr)(ArgTypes...) const) {
+	// Create function wrapper
+	auto m_function = [=](ClassType& c, ArgTypes ... args) { return (c.*m_ptr)(args...); };
+	// Delegate to other method
+	return method_(m_name, std::function<RetType(ClassType&, ArgTypes...)>(m_function));
+      }
+
+      template <typename RetType, typename ... ArgTypes>
+      class_builder& method(const string& m_name, RetType (ClassType::*m_ptr)(ArgTypes...)) {
+	// Create function wrapper
+	auto m_function = [=](ClassType& c, ArgTypes ... args) { return (c.*m_ptr)(args...); };
+	// Delegate to other method
+	return method_(m_name, std::function<RetType(ClassType&, ArgTypes...)>(m_function));
+      }
+
+      template <typename LambdaType>
+      class_builder& method(const string& m_name, LambdaType m_lambda) {
+	// Infer function type from lambda object
+	typedef magic::function_traits<decltype(m_lambda)> f_traits;
+	// Create function wrapper
+	typename f_traits::function_type m = m_lambda;
+	// Delegate to other function method
+	return method_(m_name, m); 
+      }
+
+      template <typename RetType, typename ... ArgTypes>
+      class_builder& method(const string& m_name, std::function<RetType(ClassType&, ArgTypes...)> m) {
+	return method_(m_name, m);
+      }
+
+    private:
+      template <typename RetType, typename ... ArgTypes>
+      class_builder& method_(const string& m_name, std::function<RetType(const ClassType&, ArgTypes...)> m) {
+	c_.add_method(m_name, class_builder_helper<ClassType, RetType, ArgTypes...>::wrap_method(m));
+	return *this;
+      }
+
+      template <typename RetType, typename ... ArgTypes>
+      class_builder& method_(const string& m_name, std::function<RetType(ClassType&, ArgTypes...)> m) {
+	c_.add_method(m_name, class_builder_helper<ClassType, RetType, ArgTypes...>::wrap_method(m));
+	return *this;
+      }
+    private:
+      static void desctructor(napi_env env, void* data, void* hint) { delete (ClassType*) data; }
     };
       
     class function : public napi::value {  
@@ -755,7 +942,7 @@ namespace jsbind11 {
 				       f_data,
 				       &f_napi_value);
 	// Make sure all is well!
-	napi::check_status(status);
+	JSBIND11_CHECK_STATUS(status); 
 
 	// Return created NAPI value
 	return f_napi_value;
@@ -802,8 +989,7 @@ namespace jsbind11 {
       void operator()(napi_env env,
 		      napi_value exports,
 		      napi_value module,
-		      void* p)
-      {
+		      void* p) {
 	// NAPI call status 
 	napi_status status;
 
@@ -814,7 +1000,7 @@ namespace jsbind11 {
 	  // Export NAPI value for this class under corresponding name
 	  status = napi_set_named_property(env, exports, c_name, c_napi_value);
 	  // Make sure all is well!
-	  internal::napi::check_status(status);
+	  JSBIND11_CHECK_STATUS(status); 
 	}
 
 	// Export each function...
@@ -824,7 +1010,7 @@ namespace jsbind11 {
 	  // Export NAPI value for this function under corresponding name
 	  status = napi_set_named_property(env, exports, f_name, f_napi_value);
 	  // Make sure all is well!
-	  internal::napi::check_status(status);
+	  JSBIND11_CHECK_STATUS(status); 
 	}
       }
     };
@@ -842,7 +1028,7 @@ namespace jsbind11 {
     template <typename ClassType>
     internal::class_builder<ClassType> class_(const string& c_name) {
       // Add class to module descriptor and get its reference
-      auto c = desc_->add_class(internal::class_(c_name));
+      internal::class_& c = desc_->add_class(internal::class_(c_name));
       // Create class builder for ClassType and return it
       return internal::class_builder<ClassType>(c);
     }
@@ -871,6 +1057,7 @@ namespace jsbind11 {
 				 function<RetType(ArgTypes...)> f) {
       internal::function f_(f_name, [=](napi_env env, napi_callback_info info) {
 	  using namespace internal;
+
 	  // Parse function call aguments from napi callback info
 	  auto f_args = magic::call_args<ArgTypes...>(env, info)();
 	  // Forward call arguments to native C++ function
@@ -954,5 +1141,8 @@ namespace jsbind11 {
   */
   
 }  //  namespace jsbind11
+
+#undef JSBIND11_DEBUG
+#undef JSBIND11_CHECK_STATUS
 
 #endif  //  JSBIND_H_
