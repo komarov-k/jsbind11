@@ -1,17 +1,19 @@
 {
     'targets': [
 	{
-	    'target_name': 'function-wrap-native',
+	    'target_name': 'test',
 	    'sources': [
-		'../../src/jsbind11.cpp',
-		'src/function-wrap.cpp'
+		'../src/jsbind11.cpp',
+		'jsbind11-test.cpp',
+		'test-adder.cpp',
+		'test-function-export.cpp'
 	    ],
 	    'include_dirs': [
-		"../../include",
-		"<!@(node -p \"require('node-addon-api').include\")"
+	    	"../include",
+	   	"<!@(node -p \"require('node-addon-api').include\")",
 	    ],
 	    'dependencies': ["<!(node -p \"require('node-addon-api').gyp\")"],
-	    'cflags': ['-std=c++11', '-DJSBIND11_DEBUG'],
+	    'cflags': ['-std=c++11'],
 	    'cflags!': [ '-fno-exceptions' ],
 	    'cflags_cc!': [ '-fno-exceptions' ],
 	    'xcode_settings': {

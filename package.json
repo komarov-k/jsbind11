@@ -1,0 +1,36 @@
+{
+   "name": "jsbind11",
+   "version": "1.0.0",
+   "description": "C++11 library for native Node.js addons, inspired by pybind11 ",
+   "main": "index.js",
+   "dependencies": {
+      "almost-equal": "^1.1.0",
+      "node-addon-api": "^0.3.0",
+      "node-gyp": "^3.6.2"
+   },
+   "devDependencies": {
+      "mocha": "^3.4.2"
+   },
+   "scripts": {
+      "build-test": "cd test && npm install",
+      "test": "node --napi-modules test/driver.js"
+   },
+   "repository": {
+      "type": "git",
+      "url": "git+https://github.com/komarov-k/jsbind11.git"
+   },
+   "keywords": [
+      "NAPI",
+      "NAN",
+      "addon",
+      "plugin",
+      "extension",
+      "jsbind11"
+   ],
+   "author": "Konstantyn Komarov",
+   "license": "MIT",
+   "bugs": {
+      "url": "https://github.com/komarov-k/jsbind11/issues"
+   },
+   "homepage": "https://github.com/komarov-k/jsbind11#readme"
+}

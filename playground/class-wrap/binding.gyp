@@ -2,7 +2,10 @@
     'targets': [
 	{
 	    'target_name': 'class-wrap-native',
-	    'sources': [ 'src/class-wrap.cpp' ],
+	    'sources': [
+	    	'../../src/jsbind11.cpp',
+		'src/class-wrap.cpp'
+	    ],
 	    'include_dirs': [
 		"../../include",
 		"<!@(node -p \"require('node-addon-api').include\")"

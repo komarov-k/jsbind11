@@ -1,4 +1,3 @@
-
 #include "jsbind11.h"
 
 double mul(double a, double b) {

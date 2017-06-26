@@ -12,7 +12,7 @@ public:
     mFirst(first),
     mSecond(second) {}
   double getValue() const {
-    return mFirst * mSecond;
+    return mFirst + mSecond;
   }
 };
 

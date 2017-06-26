@@ -1,17 +1,14 @@
 {
     'targets': [
 	{
-	    'target_name': 'function-wrap-native',
-	    'sources': [
-		'../../src/jsbind11.cpp',
-		'src/function-wrap.cpp'
-	    ],
+	    'target_name': 'class-wrap-native',
+	    'sources': [ 'src/class-wrap.cpp' ],
 	    'include_dirs': [
 		"../../include",
 		"<!@(node -p \"require('node-addon-api').include\")"
 	    ],
 	    'dependencies': ["<!(node -p \"require('node-addon-api').gyp\")"],
-	    'cflags': ['-std=c++11', '-DJSBIND11_DEBUG'],
+	    'cflags': ['-std=c++11'],
 	    'cflags!': [ '-fno-exceptions' ],
 	    'cflags_cc!': [ '-fno-exceptions' ],
 	    'xcode_settings': {
