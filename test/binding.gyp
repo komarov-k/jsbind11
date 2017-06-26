@@ -14,10 +14,11 @@
 	    ],
 	    'dependencies': ["<!(node -p \"require('node-addon-api').gyp\")"],
 	    'cflags': ['-std=c++11'],
-	    'cflags!': [ '-fno-exceptions' ],
+	    'cflags!': [ '-fno-exceptions'],
 	    'cflags_cc!': [ '-fno-exceptions' ],
 	    'xcode_settings': {
 		'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',
+		'GCC_ENABLE_CPP_RTTI': 'YES',
 		'CLANG_CXX_LIBRARY': 'libc++',
 		'MACOSX_DEPLOYMENT_TARGET': '10.7'
 	    },

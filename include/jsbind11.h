@@ -169,6 +169,42 @@ namespace jsbind11 {
       }
     };
 
+    struct maybe_native_object {
+      napi_finalize get_finilize_callback() const {
+	return finilize_callback;
+      }
+      void* get_finilize_hint() const {
+	return nullptr;
+      }
+      virtual ~maybe_native_object() {}
+    private:
+      static void finilize_callback(napi_env env, void* this_, void*) {
+	delete (maybe_native_object*) this_;
+      }
+    };
+
+    template <typename T>
+    class native_object : public maybe_native_object {
+      T* ptr_;
+    protected:
+      native_object(T* ptr) : ptr_(ptr) {}
+    public:
+      ~native_object() { delete ptr_; }
+      T* get() const {
+	return ptr_;
+      }
+
+      template <typename ... ArgTypes>
+      static native_object<T>* create(const std::tuple<ArgTypes...>& args) {
+	T* ptr = detail::magic::call<T*, ArgTypes...>(create_new, args)();
+
+	return new native_object(ptr);
+      }
+    private:
+      template <typename ... ArgTypes>
+      static T* create_new(ArgTypes ... args) { return new T(args...); }
+    };
+    
     ////////////////////////////////////////////////////////////////////////////
     // Type Conversion Utilities
     ////////////////////////////////////////////////////////////////////////////
@@ -379,10 +415,12 @@ namespace jsbind11 {
       
       template <typename RetType, typename Type>
       napi_value operator()(const std::function<RetType(Type&, ArgTypes...)>& f) {
-	Type* this_ = nullptr;
+	maybe_native_object* maybe_this_obj_ = nullptr;
 	
-	JSBIND11_NAPI_(unwrap)(env_, argv_[max_argc], (void**) &this_);
+	JSBIND11_NAPI_(unwrap)(env_, argv_[max_argc], (void**) &maybe_this_obj_);
 
+	Type* this_ = dynamic_cast<native_object<Type>*>(maybe_this_obj_)->get();
+	
 	auto f_lambda = [f, this_](ArgTypes ... args) -> RetType {
 	  return f(*this_,  args...);
 	};
@@ -394,28 +432,29 @@ namespace jsbind11 {
 
       template <typename Type>
       napi_value constructor() {
-	auto this_ = detail::magic::
- 	  call<Type*, ArgTypes...>(create<Type>, args_)();
-	napi_value this_js = argv_[max_argc];
-
+	auto this_ = native_object<Type>::create(args_);
+	
 	JSBIND11_NAPI_(wrap)(env_,
-			     this_js, // JS 'this'
-			     this_,
-			     destroy<Type>, // finilize callback
-			     nullptr, // finilize hint
+			     this->argv_[max_argc], // JS 'this'
+			     (void*) this_, // C++ 'this'
+			     this_->get_finilize_callback(),
+			     this_->get_finilize_hint(),
 			     nullptr); // reference
 	
-	return this_js;     
+	return argv_[max_argc];     
       }
     private:
       template <typename Type>
-      static Type* create(ArgTypes ... args) {
-	return new Type(args...);
+      Type* create() {
+	std::function<Type*(ArgTypes...)> f = [](ArgTypes...args) -> Type* {
+	  return new Type(args...);
+	};
+
+	return detail::magic::call<Type*, ArgTypes...>(f, args_);
       }
-    
-      template <typename Type>
-      static void destroy(napi_env env, void* this_, void*) {
-	delete (Type*) this_;
+      
+      static void finilize(napi_env env, void* this_, void*) {
+	delete (maybe_native_object*) this_;
       }
     };
   }  // namespace napi

@@ -75,10 +75,11 @@ describe('TestFloatAdder', function() {
 	    
 	    var adder = new test.TestFloatAdder(x, y);
 	    
-	    it('should return true', function() {
+	    it('should be equal', function() {
 		assert(almostEqual(z, adder.getValue(),
-				   almostEqual.FLT_EPSILON,
-				   almostEqual.FLT_EPSILON));
+				   almostEqual.DBL_EPSILON,
+				   almostEqual.FLT_EPSILON),
+		       z.toString() + ' != ' + adder.getValue().toString());
 	    })	
 	}
     })
@@ -107,10 +108,11 @@ describe('TestDoubleAdder', function() {
 	
 	    var adder = new test.TestDoubleAdder(x, y);
 	    
-	    it('should return true', function() {
+	    it('should be equal', function() {
 		assert(almostEqual(z, adder.getValue(),
 				   almostEqual.DBL_EPSILON,
-				   almostEqual.DBL_EPSILON));
+				   almostEqual.DBL_EPSILON),
+		       z.toString() + ' != ' + adder.getValue().toString());
 	    })
 	}
     })
